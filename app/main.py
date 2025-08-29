@@ -30,7 +30,11 @@ app = FastAPI(title="Pickup Line Generator API", version="0.1.0")
 # CORS (adjust origins for your frontend)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://065b46f36fdf.ngrok-free.app"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://065b46f36fdf.ngrok-free.app",
+        "https://main.d3jjj51vtinn6u.amplifyapp.com",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
