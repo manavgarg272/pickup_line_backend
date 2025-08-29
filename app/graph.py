@@ -56,7 +56,7 @@ def _describe_node(model: Optional[str], temperature: Optional[float]):
     """
     Vision description node. If state has non-empty features, it returns state unchanged.
     Else, if image_bytes is present, it calls a vision-capable model to extract features
-    with keys: description (str), attributes (List[str]), vibes (List[str]).
+    with keys: description (str), attributes (List[str]).
     """
     vision_model = os.getenv("OPENAI_VISION_MODEL") or model or "gpt-4o-mini"
     llm = ChatOpenAI(
@@ -73,9 +73,8 @@ def _describe_node(model: Optional[str], temperature: Optional[float]):
     )
     user_text = (
         "Analyze the image and output strict JSON with keys: "
-        "description (string), attributes (string[]), vibes (string[]). "
+        "description (string), attributes (string[]). "
         "attributes are short keywords like 'smiling','beach','guitar','dog','sunset','glasses'. "
-        "vibes are 1-3 words like 'adventurous','artsy','bookish'."
     )
 
     def node(state: GraphState) -> GraphState:
@@ -107,10 +106,9 @@ def _describe_node(model: Optional[str], temperature: Optional[float]):
         try:
             data = json.loads(content)
         except Exception:
-            data = {"description": str(content or ""), "attributes": [], "vibes": []}
+            data = {"description": str(content or ""), "attributes": []}
         data.setdefault("description", "")
         data.setdefault("attributes", [])
-        data.setdefault("vibes", [])
         return {"features": data}
 
     return node
@@ -189,7 +187,6 @@ def build_pickup_graph(model: Optional[str] = None, temperature: Optional[float]
     # Start with describe, then fan out to the four generators
     g.add_edge(START, "describe")
     g.add_edge("describe", "playful")
-    g.add_edge("describe", "witty")
     g.add_edge("describe", "spicy")
     g.add_edge("describe", "sweet")
 
