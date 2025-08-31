@@ -33,7 +33,7 @@ def _build_llm(model: Optional[str], temperature: Optional[float]) -> ChatOpenAI
 
     kwargs = {
         "model": chosen_model,
-        "temperature": temperature if temperature is not None else 0.8,
+        "temperature": temperature if temperature is not None else 1,
     }
     if api_key:
         kwargs["api_key"] = api_key
@@ -118,9 +118,10 @@ def _make_gen_node(label: str, style_instruction: str, model: Optional[str], tem
     llm = _build_llm(model, temperature)
     prompt = ChatPromptTemplate.from_messages([
         ("system", f"You write a single, short pickup line in the following style: {style_instruction}.\n"
-                    "Keep it respectful and flirty, avoid creepy or offensive content.\n"
-                    "Please use simple english\n"
+                    "It should make her feel admired, special, or cherished.\n"
                     "You can add humor in pickup line.\n"
+                    "Keep it less logical and more creative.\n"
+                    "Avoid clichés unless used playfully. Use warmth, charm, or subtle romance.\n"
                     "Only output the pickup line text, no quotes, no JSON."),
         ("user", "Features: {features}")
     ])
@@ -143,7 +144,10 @@ def _rater_node(model: Optional[str], temperature: Optional[float]):
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a woman reading dating app openers.\n"
                     "Rate each line from 1-10 on attractiveness, charm, and respect.\n"
-                    "Return a JSON object with keys 'ratings' (map of label to number), 'best_label' (string), and 'best_line' (string)."),
+                    "Return strict JSON with keys: \n"
+                    "- ratings: object mapping label->integer 1-10\n"
+                    "- best_label: string (the best line's label)\n"
+                    "- best_line: string"),
         ("user", "Lines to rate (JSON): {outputs}")
     ])
     chain = prompt | llm
@@ -165,6 +169,7 @@ def _rater_node(model: Optional[str], temperature: Optional[float]):
             if non_empty:
                 best_label, best_line = max(non_empty, key=lambda kv: len(kv[1]))
             ratings = {k: 7 for k in outputs.keys()}  # neutral default
+
         return {
             "ratings": ratings,
             "best_label": best_label,
@@ -182,6 +187,8 @@ def build_pickup_graph(model: Optional[str] = None, temperature: Optional[float]
     g.add_node("witty", _make_gen_node("witty", "clever, wordplay, subtle humor", model, temperature))
     g.add_node("spicy", _make_gen_node("spicy", "bold, flirty, a tiny bit spicy but respectful", model, temperature))
     g.add_node("sweet", _make_gen_node("sweet", "wholesome, kind, cute", model, temperature))
+    g.add_node("roast", _make_gen_node("roast", "playful roast, cheeky tease, light sarcasm without insults; keep respectful and fun", model, temperature))
+    g.add_node("rizz", _make_gen_node("rizz", "confident, charismatic charm with smooth delivery; respectful and magnetic, no arrogance", model, temperature))
     g.add_node("rate", _rater_node(model, temperature))
 
     # Start with describe, then fan out to the four generators
@@ -189,12 +196,16 @@ def build_pickup_graph(model: Optional[str] = None, temperature: Optional[float]
     g.add_edge("describe", "playful")
     g.add_edge("describe", "spicy")
     g.add_edge("describe", "sweet")
+    g.add_edge("describe", "roast")
+    g.add_edge("describe", "rizz")
 
     # Join at rater
     g.add_edge("playful", "rate")
     g.add_edge("witty", "rate")
     g.add_edge("spicy", "rate")
     g.add_edge("sweet", "rate")
+    g.add_edge("roast", "rate")
+    g.add_edge("rizz", "rate")
 
     # Conditional loop: if a targeted label is below threshold and hasn't exceeded attempts, retry it
     THRESHOLD = 8
@@ -204,7 +215,7 @@ def build_pickup_graph(model: Optional[str] = None, temperature: Optional[float]
         ratings = state.get("ratings", {}) or {}
         attempts = state.get("attempts", {}) or {}
         candidates = []
-        for label in ("playful", "witty", "spicy"):
+        for label in ("playful", "witty", "spicy", "roast", "rizz"):
             score = 0
             try:
                 score = int(ratings.get(label, 0))
@@ -226,6 +237,8 @@ def build_pickup_graph(model: Optional[str] = None, temperature: Optional[float]
             "retry_playful": "playful",
             "retry_witty": "witty",
             "retry_spicy": "spicy",
+            "retry_roast": "roast",
+            "retry_rizz": "rizz",
             "done": END,
         },
     )
