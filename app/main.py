@@ -34,6 +34,8 @@ app.add_middleware(
         "http://localhost:5173",
         "https://065b46f36fdf.ngrok-free.app",
         "https://main.d3jjj51vtinn6u.amplifyapp.com",
+        "https://www.flirtsparks.in",
+        "https://flirtsparks.in",
     ],
     allow_credentials=True,
     allow_methods=["*"],
