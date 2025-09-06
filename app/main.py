@@ -3,6 +3,7 @@ import os
 import json
 from typing import List, Optional
 from dotenv import load_dotenv
+import razorpay
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,13 +11,10 @@ from fastapi.responses import JSONResponse
 
 # from app.openai_client import OpenAIClient
 from app.schemas import (
-    # ImageDescription,
-    # GenerateFromFeaturesRequest,
-    # GenerateFromFeaturesResponse,
-    # GenerateFromImageResponse,
-    # HealthResponse,
     GraphGenerateRequest,
     GraphGenerateResponse,
+    RazorpayCreateOrderRequest,
+    RazorpayOrderResponse,
 )
 from app.graph import build_pickup_graph
 
@@ -41,94 +39,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Single OpenAI client instance
-# try:
-#     openai_client = OpenAIClient()
-# except Exception as e:
-#     # Delay failure to runtime endpoints, but log here
-#     print(e)
-#     openai_client = None
-#     INIT_ERROR = str(e)
-# else:
-#     INIT_ERROR = None
-
-
-# @app.get("/health", response_model=HealthResponse)
-# async def health() -> HealthResponse:
-#     if openai_client is None:
-#         return HealthResponse(status="degraded", version=app.version)
-#     return HealthResponse(status="ok", version=app.version,  model_vision=openai_client.vision_model)
-
-
-# @app.post("/v1/describe-image", response_model=ImageDescription)
-# async def describe_image(file: UploadFile = File(...)) -> ImageDescription:
-#     if openai_client is None:
-#         raise HTTPException(status_code=500, detail=f"Initialization error: {INIT_ERROR}")
-#     # Validate content type
-#     if not (file.content_type and file.content_type.startswith("image/")):
-#         raise HTTPException(status_code=400, detail="Please upload an image file.")
-
-#     data = await file.read()
-#     if len(data) == 0:
-#         raise HTTPException(status_code=400, detail="Empty file uploaded.")
-
-#     features = openai_client.describe_image(data, mime_type=file.content_type)
-#     return ImageDescription(**features)
-
-
-# @app.post("/v1/generate-pickuplines", response_model=GenerateFromFeaturesResponse)
-# async def generate_pickup_lines(payload: GenerateFromFeaturesRequest) -> GenerateFromFeaturesResponse:
-#     if openai_client is None:
-#         raise HTTPException(status_code=500, detail=f"Initialization error: {INIT_ERROR}")
-#     result = openai_client.generate_pickup_lines(
-#         features=payload.features.model_dump(),
-#         dataset_examples=payload.dataset_examples,
-#         count=payload.count,
-#         tone=payload.tone,
-#         temperature=payload.temperature,
-#     )
-#     return GenerateFromFeaturesResponse(lines=result.get("lines", []))
-
-
-# @app.post("/v1/generate-pickuplines-from-image", response_model=GenerateFromImageResponse)
-# async def generate_pickup_lines_from_image(
-#     file: UploadFile = File(...),
-#     count: int = 5,
-#     tone: Optional[str] = Form(default=None),
-#     dataset_examples: Optional[str] = Form(default=None, description="JSON array of strings e.g. [\"line1\", \"line2\"]"),
-#     temperature: Optional[float] = Form(default=None, description="Sampling temperature for generation"),
-# ) -> GenerateFromImageResponse:
-#     if openai_client is None:
-#         raise HTTPException(status_code=500, detail=f"Initialization error: {INIT_ERROR}")
-
-#     if not (file.content_type and file.content_type.startswith("image/")):
-#         raise HTTPException(status_code=400, detail="Please upload an image file.")
-
-#     data = await file.read()
-#     if len(data) == 0:
-#         raise HTTPException(status_code=400, detail="Empty file uploaded.")
-
-#     # Parse dataset_examples JSON string if provided
-#     examples_list: Optional[List[str]] = None
-#     if dataset_examples:
-#         try:
-#             parsed = json.loads(dataset_examples)
-#             if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
-#                 examples_list = parsed
-#         except Exception:
-#             # Ignore malformed examples
-#             examples_list = None
-
-#     features = openai_client.describe_image(data, mime_type=file.content_type)
-#     gen = openai_client.generate_pickup_lines(
-#         features=features,
-#         dataset_examples=examples_list,
-#         count=count,
-#         tone=tone,
-#         temperature=temperature,
-#     )
-#     return GenerateFromImageResponse(features=ImageDescription(**features), lines=gen.get("lines", []))
 
 
 @app.post("/v1/generate-graph", response_model=GraphGenerateResponse)
@@ -167,6 +77,50 @@ async def generate_graph(payload: GraphGenerateRequest) -> GraphGenerateResponse
         best_label=best_label,
         best_line=best_line,
     )
+
+
+# Razorpay: Create Order
+@app.post("/v1/payments/razorpay/create-order", response_model=RazorpayOrderResponse)
+async def create_razorpay_order(payload: RazorpayCreateOrderRequest) -> RazorpayOrderResponse:
+    key_id = os.getenv("RAZORPAY_KEY_ID")
+    key_secret = os.getenv("RAZORPAY_KEY_SECRET")
+    if not key_id or not key_secret:
+        raise HTTPException(status_code=500, detail="Razorpay credentials are not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET")
+
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be greater than 0 (in the smallest currency unit)")
+
+    try:
+        client = razorpay.Client(auth=(key_id, key_secret))
+        data = {
+            "amount": payload.amount,  # amount in paise for INR
+            "currency": payload.currency or "INR",
+        }
+        if payload.receipt:
+            data["receipt"] = payload.receipt
+        if payload.notes:
+            data["notes"] = payload.notes
+
+        order = client.order.create(data=data)
+        # Build typed response including public key for frontend checkout
+        return RazorpayOrderResponse(
+            id=order.get("id"),
+            amount=order.get("amount"),
+            currency=order.get("currency"),
+            status=order.get("status"),
+            receipt=order.get("receipt"),
+            created_at=order.get("created_at"),
+            amount_paid=order.get("amount_paid"),
+            amount_due=order.get("amount_due"),
+            notes=order.get("notes") or {},
+            key_id=key_id,
+        )
+    except razorpay.errors.BadRequestError as e:
+        raise HTTPException(status_code=400, detail=f"Razorpay BadRequest: {e}")
+    except razorpay.errors.ServerError as e:
+        raise HTTPException(status_code=502, detail=f"Razorpay ServerError: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Razorpay error: {e}")
 
 
 @app.post("/v1/generate-graph-from-image", response_model=GraphGenerateResponse)

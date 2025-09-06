@@ -8,3 +8,4 @@ langchain-core==0.3.19
 langchain-openai==0.2.3
 langsmith
 python-dotenv
+razorpay

@@ -51,3 +51,23 @@ class GraphGenerateResponse(BaseModel):
     ratings: Dict[str, int] = Field(description="Rating 1-10 from the rater for each node label")
     best_label: str
     best_line: str
+
+
+class RazorpayCreateOrderRequest(BaseModel):
+    amount: int = Field(description="Amount in the smallest currency unit (e.g., paise for INR)")
+    currency: str = Field(default="INR", description="ISO currency code, e.g., INR")
+    receipt: Optional[str] = Field(default=None, description="Receipt identifier for the order")
+    notes: Optional[Dict[str, Any]] = Field(default=None, description="Optional notes to attach to the order")
+
+
+class RazorpayOrderResponse(BaseModel):
+    id: str
+    amount: int
+    currency: str
+    status: Optional[str] = None
+    receipt: Optional[str] = None
+    created_at: Optional[int] = None
+    amount_paid: Optional[int] = None
+    amount_due: Optional[int] = None
+    notes: Dict[str, Any] = Field(default_factory=dict)
+    key_id: str = Field(description="Public Razorpay key id to be used on frontend for checkout")
