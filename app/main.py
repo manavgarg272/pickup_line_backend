@@ -35,6 +35,8 @@ app.add_middleware(
         "https://www.flirtsparks.in",
         "https://flirtsparks.in",
     ],
+    # Also allow any subdomain of flirtsparks.in (e.g., www.flirtsparks.in)
+    allow_origin_regex=r"^https?://([a-z0-9-]+\.)*flirtsparks\.in$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
